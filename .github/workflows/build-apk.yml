@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -21,22 +21,39 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
 
-      - name: Install Android SDK 35
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install Android 35
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
-        run: gradle --no-daemon assembleDebug
+      - name: Find project
+        shell: bash
+        run: |
+          if [[ -f settings.gradle && -f app/build.gradle ]]; then
+            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+          elif [[ -f SupermarketOrderReminder/settings.gradle && -f SupermarketOrderReminder/app/build.gradle ]]; then
+            echo "PROJECT_DIR=SupermarketOrderReminder" >> "$GITHUB_ENV"
+          else
+            echo "ERROR: Android project files not found" >&2
+            find . -maxdepth 3 -type f | head -80
+            exit 1
+          fi
+
+      - name: Build debug APK
+        run: gradle --no-daemon --stacktrace --project-dir "$PROJECT_DIR" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SupermarketOrderReminder-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: SupermarketOrderReminder-v1.0-debug-APK
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            SupermarketOrderReminder/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
