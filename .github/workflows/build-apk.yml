@@ -9,9 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -25,35 +24,49 @@ jobs:
         with:
           packages: ''
 
-      - name: Install Android 35
+      - name: Install SDK 35
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Setup Gradle 8.9
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Find project
+      - name: Locate or extract source
         shell: bash
         run: |
+          set -euo pipefail
           if [[ -f settings.gradle && -f app/build.gradle ]]; then
-            echo "PROJECT_DIR=." >> "$GITHUB_ENV"
+            project_dir="$GITHUB_WORKSPACE"
           elif [[ -f SupermarketOrderReminder/settings.gradle && -f SupermarketOrderReminder/app/build.gradle ]]; then
-            echo "PROJECT_DIR=SupermarketOrderReminder" >> "$GITHUB_ENV"
+            project_dir="$GITHUB_WORKSPACE/SupermarketOrderReminder"
           else
-            echo "ERROR: Android project files not found" >&2
-            find . -maxdepth 3 -type f | head -80
+            zip_file="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -iname 'SupermarketOrderReminder*.zip' | sort -V | tail -n 1)"
+            if [[ -z "$zip_file" ]]; then
+              echo "ERROR: Source ZIP not found" >&2
+              exit 1
+            fi
+            mkdir -p "$RUNNER_TEMP/supermarket-source"
+            unzip -q "$zip_file" -d "$RUNNER_TEMP/supermarket-source"
+            settings_file="$(find "$RUNNER_TEMP/supermarket-source" -maxdepth 5 -type f -name settings.gradle -print -quit)"
+            if [[ -z "$settings_file" ]]; then
+              echo "ERROR: settings.gradle not found" >&2
+              exit 1
+            fi
+            project_dir="$(dirname "$settings_file")"
+          fi
+          if [[ ! -f "$project_dir/app/build.gradle" ]]; then
+            echo "ERROR: app/build.gradle not found" >&2
             exit 1
           fi
+          echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
 
-      - name: Build debug APK
+      - name: Build APK
         run: gradle --no-daemon --stacktrace --project-dir "$PROJECT_DIR" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SupermarketOrderReminder-v1.0-debug-APK
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            SupermarketOrderReminder/app/build/outputs/apk/debug/*.apk
+          name: SupermarketOrderReminder-debug-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
