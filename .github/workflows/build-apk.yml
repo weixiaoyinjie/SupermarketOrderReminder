@@ -1,4 +1,3 @@
-
 name: Build Supermarket Order Reminder APK
 
 on:
@@ -24,49 +23,45 @@ jobs:
         with:
           packages: ''
 
-      - name: Install SDK 35
-        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK 35
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Locate or extract source
+      # Works if you uploaded only the source ZIP (as in your previous builds).
+      # The highest version ZIP wins if v1.0/v1.1 are still present.
+      - name: Locate project or unpack newest ZIP
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f settings.gradle && -f app/build.gradle ]]; then
-            project_dir="$GITHUB_WORKSPACE"
-          elif [[ -f SupermarketOrderReminder/settings.gradle && -f SupermarketOrderReminder/app/build.gradle ]]; then
-            project_dir="$GITHUB_WORKSPACE/SupermarketOrderReminder"
-          else
-            zip_file="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -iname 'SupermarketOrderReminder*.zip' | sort -V | tail -n 1)"
-            if [[ -z "$zip_file" ]]; then
-              echo "ERROR: Source ZIP not found" >&2
-              exit 1
-            fi
+          zip_file="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -type f -iname 'SupermarketOrderReminder*.zip' | sort -V | tail -n 1)"
+          if [[ -n "$zip_file" ]]; then
+            echo "Building from ZIP: $zip_file"
             mkdir -p "$RUNNER_TEMP/supermarket-source"
             unzip -q "$zip_file" -d "$RUNNER_TEMP/supermarket-source"
-            settings_file="$(find "$RUNNER_TEMP/supermarket-source" -maxdepth 5 -type f -name settings.gradle -print -quit)"
-            if [[ -z "$settings_file" ]]; then
-              echo "ERROR: settings.gradle not found" >&2
-              exit 1
-            fi
+            settings_file="$(find "$RUNNER_TEMP/supermarket-source" -maxdepth 6 -type f -name settings.gradle -print -quit)"
+            [[ -n "$settings_file" ]] || { echo 'ERROR: settings.gradle not found in source ZIP'; exit 1; }
             project_dir="$(dirname "$settings_file")"
-          fi
-          if [[ ! -f "$project_dir/app/build.gradle" ]]; then
-            echo "ERROR: app/build.gradle not found" >&2
+          elif [[ -f "$GITHUB_WORKSPACE/settings.gradle" ]]; then
+            project_dir="$GITHUB_WORKSPACE"
+          elif [[ -f "$GITHUB_WORKSPACE/SupermarketOrderReminder/settings.gradle" ]]; then
+            project_dir="$GITHUB_WORKSPACE/SupermarketOrderReminder"
+          else
+            echo 'ERROR: Neither Android source tree nor SupermarketOrderReminder*.zip found'
             exit 1
           fi
+          [[ -f "$project_dir/app/build.gradle" ]] || { echo 'ERROR: app/build.gradle missing'; exit 1; }
           echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
 
-      - name: Build APK
+      - name: Build debug APK
         run: gradle --no-daemon --stacktrace --project-dir "$PROJECT_DIR" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SupermarketOrderReminder-debug-APK
+          name: SupermarketOrderReminder-v1.9-debug-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
